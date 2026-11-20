@@ -1,0 +1,11 @@
+# Fichiers Python générés automatiquement
+__pycache__/
+*.pyc
+
+# Résultats et logs générés à chaque exécution
+smoke-results.txt
+*.log
+
+# Dossiers de configuration locale
+venv/
+.vscode/
