@@ -1,0 +1,9 @@
+# Fichiers à ne pas envoyer à Docker pendant le build
+.git
+.gitignore
+__pycache__/
+*.pyc
+smoke-results.txt
+*.log
+.vscode/
+venv/
