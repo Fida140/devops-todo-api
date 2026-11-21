@@ -1,0 +1,101 @@
+// =====================================================================
+// Jenkinsfile.pr - PIPELINE 1 : Build & Smoke sur Pull Request
+// Declenche quand une Pull Request est ouverte (ou mise a jour) vers dev
+// =====================================================================
+
+// Fonction qui ecrit le rapport de pipeline (archive dans Jenkins)
+def writeReport(String status) {
+    def report = """RAPPORT DE PIPELINE - BUILD & SMOKE SUR PULL REQUEST
+=====================================================
+Pipeline      : ${env.JOB_NAME}
+Build         : #${env.BUILD_NUMBER}
+Pull Request  : #${env.CHANGE_ID} - ${env.CHANGE_TITLE}
+Branches      : ${env.CHANGE_BRANCH} -> ${env.CHANGE_TARGET}
+Auteur        : ${env.CHANGE_AUTHOR}
+Image Docker  : ${env.IMAGE}
+Statut        : ${status}
+Duree         : ${currentBuild.durationString}
+URL du build  : ${env.BUILD_URL}
+"""
+    writeFile file: 'reports/pipeline-report.txt', text: report, encoding: 'UTF-8'
+}
+
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout()                         // le checkout est fait dans le stage Checkout
+        timestamps()                                  // affiche l'heure devant chaque ligne de log
+        timeout(time: 15, unit: 'MINUTES')            // arrete le build s'il bloque
+        buildDiscarder(logRotator(numToKeepStr: '10'))// garde seulement les 10 derniers builds
+    }
+
+    environment {
+        IMAGE     = "devops-todo-api:pr-${env.CHANGE_ID}-${env.BUILD_NUMBER}"
+        CONTAINER = "todo-pr-${env.CHANGE_ID}-${env.BUILD_NUMBER}"
+        PORT      = '5001'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+                echo "Pull Request #${env.CHANGE_ID} : ${env.CHANGE_BRANCH} -> ${env.CHANGE_TARGET}"
+            }
+        }
+
+        stage('Setup') {
+            steps {
+                bat 'if exist reports rmdir /s /q reports'
+                bat 'mkdir reports'
+                bat 'python --version'
+                bat 'docker --version'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat "docker build -t ${IMAGE} . > reports\\build.log 2>&1"
+                bat 'type reports\\build.log'
+            }
+        }
+
+        stage('Run (Docker)') {
+            steps {
+                bat "docker run -d --name ${CONTAINER} -p ${PORT}:5000 ${IMAGE}"
+                bat 'docker ps'
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                bat "python smoke_test.py http://localhost:${PORT} reports\\smoke-results.txt"
+            }
+        }
+
+        stage('Archive Artifacts') {
+            steps {
+                script { writeReport('SUCCESS') }
+                archiveArtifacts artifacts: 'reports/**', fingerprint: true
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleanup : sauvegarde des logs du conteneur, archivage, puis suppression'
+            bat(script: "docker logs ${CONTAINER} > reports\\container.log 2>&1", returnStatus: true)
+            script { writeReport(currentBuild.currentResult) }
+            archiveArtifacts artifacts: 'reports/**', allowEmptyArchive: true
+            bat(script: "docker rm -f ${CONTAINER}", returnStatus: true)
+            bat(script: "docker rmi ${IMAGE}", returnStatus: true)
+        }
+        success {
+            echo 'RESULTAT : PASSED - la Pull Request peut etre fusionnee dans dev'
+        }
+        failure {
+            echo 'RESULTAT : FAILED - corriger le probleme avant de fusionner'
+        }
+    }
+}

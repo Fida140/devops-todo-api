@@ -6,7 +6,7 @@ import urllib.request
 
 # Adresse de l'application (par défaut : http://localhost:5000)
 BASE_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5000"
-RESULT_FILE = "smoke-results.txt"
+RESULT_FILE = sys.argv[2] if len(sys.argv) > 2 else "smoke-results.txt"
 results = []
 
 
